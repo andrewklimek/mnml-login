@@ -12,7 +12,7 @@ function send_via_twilio( $to, $code='', $link='' ) {
 	$to = '+'. trim( $to, ' +' );
 	$post = [ 'To' => $to ];
 
-	$settings = get_option( 'mnml2fa' );
+	$settings = get_option( 'mnml_login' );
 	$sid = $settings['twilio_account_sid'];// Account SID
 	$user = $settings['twilio_api_sid'];// API SID
 	$pass = $settings['twilio_api_secret'];// API Secret
