@@ -248,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('mousemove', () => hasInteracted = true, { once: true });
 
     <?php if (! empty($settings->enable_bot_protection)): ?>
-    let tokenFetched = false;
+    tokenFetched = false;
     // Fetch token
     const fetchToken = () => {
         fetch('<?php echo rest_url('mnml_login/v1/get_token'); ?>', {
