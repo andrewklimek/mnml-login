@@ -93,9 +93,9 @@ function redirect_to_homepage_login() {
         if (!empty($settings->use_custom_homepage)) return;
 
         status_header(200);
-        echo '<!DOCTYPE html><html lang="en">';
-        echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
-        echo '<meta name="robots" content="noindex, nofollow">';
+        echo '<!DOCTYPE html><html lang=en>';
+        echo '<meta name=viewport content="width=device-width, initial-scale=1">';
+        echo '<meta name=robots content="noindex, nofollow">';
         if (!empty($settings->allow_api_discovery)) rest_output_link_wp_head();
         echo '<title>' . esc_html(get_bloginfo('name', 'display')) . '</title>';
         echo do_shortcode('[mnml_login]');
@@ -154,83 +154,83 @@ function login_shortcode($atts) {
     ob_start();
 ?>
 <style><?php echo minify_css($css); ?></style>
-<form id="simple-login-form" method="post" action="<?php echo rest_url('mnml_login/v1/simple_login'); ?>">
-    <input type="text"  name="log" id="user_login" class="input">
-    <input type="password" name="pwd" id="user_pass" class="input">
-    <input type="submit" value="Login">
+<form id=simple-login-form method=post action="<?php echo rest_url('mnml_login/v1/simple_login'); ?>">
+    <input type=text  name=log id=user_login class=input>
+    <input type=password name=pwd id=user_pass class=input>
+    <input type=submit value=Login>
 </form>
-<div id="mnml-login">
-    <p id="mnml-login-msg" class="mnml-login-msg"></p>
-    <form id="mnml-login-form" method="post">
+<div id=mnml-login>
+    <p id=mnml-login-msg class=mnml-login-msg></p>
+    <form id=mnml-login-form method=post>
         <?php if (isset($_GET['action']) && $_GET['action'] === 'lostpassword'): ?>
-            <div id="mnml-login-section">
-                <p><label for="mnml-user-login">Username or Email<br>
-                    <input type="text" name="user_login" id="mnml-user-login" class="mnml-input" value="" size="20" autocomplete="username">
+            <div id=mnml-login-section>
+                <p><label for=mnml-user-login>Username or Email<br>
+                    <input type=text name=user_login id=mnml-user-login class=mnml-input size=20 autocomplete=username>
                 </label></p>
-                <p><input type="submit" id="mnml-submit" class="mnml-button" value="Get New Password" disabled>
-                <input type="hidden" name="action" value="lostpassword">
-                <input type="hidden" name="login_token" id="mnml-token">
+                <p><input type=submit id=mnml-submit class=mnml-button value="Get New Password" disabled>
+                <input type=hidden name=action value=lostpassword>
+                <input type=hidden name=login_token id=mnml-token>
             </div>
         <?php elseif (isset($_GET['action']) && $_GET['action'] === 'rp' && isset($_GET['key']) && isset($_GET['login'])): ?>
-            <div id="mnml-login-section">
-                <p><label for="mnml-pass1">New Password<br>
-                    <input type="password" name="pass1" id="mnml-pass1" class="mnml-input" size="20" autocomplete="new-password" required>
+            <div id=mnml-login-section>
+                <p><label for=mnml-pass1>New Password<br>
+                    <input type=password name=pass1 id=mnml-pass1 class=mnml-input size=20 autocomplete=new-password required>
                 </label></p>
-                <p><label for="mnml-pass2">Confirm Password<br>
-                    <input type="password" name="pass2" id="mnml-pass2" class="mnml-input" size="20" autocomplete="new-password" required>
+                <p><label for=mnml-pass2>Confirm Password<br>
+                    <input type=password name=pass2 id=mnml-pass2 class=mnml-input size=20 autocomplete=new-password required>
                 </label></p>
-                <p><input type="submit" id="mnml-submit" class="mnml-button" value="Reset Password" disabled>
-                <input type="hidden" name="action" value="resetpassword">
-                <input type="hidden" name="rp_key" value="<?php echo esc_attr($_GET['key']); ?>">
-                <input type="hidden" name="rp_login" value="<?php echo esc_attr($_GET['login']); ?>">
-                <input type="hidden" name="login_token" id="mnml-token">
+                <p><input type=submit id=mnml-submit class=mnml-button value="Reset Password" disabled>
+                <input type=hidden name=action value=resetpassword>
+                <input type=hidden name=rp_key value="<?php echo esc_attr($_GET['key']); ?>">
+                <input type=hidden name=rp_login value="<?php echo esc_attr($_GET['login']); ?>">
+                <input type=hidden name=login_token id=mnml-token>
             </div>
         <?php elseif (isset($_GET['interim-login'])): ?>
-            <div id="mnml-login-section">
-                <p><label for="mnml2falog">Username, Email, or Phone Number<br>
-                    <input type="text" name="mnml2falog" id="mnml2falog" class="mnml-input" size="20" autocapitalize="off" autocomplete="email tel" required>
+            <div id=mnml-login-section>
+                <p><label for=mnml2falog>Username, Email, or Phone Number<br>
+                    <input type=text name=mnml2falog id=mnml2falog class=mnml-input size=20 autocapitalize=off autocomplete="email tel" required>
                 </label></p>
                 <?php if ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none'): ?>
-                <p><label for="mnml-pwd">Password<br>
-                    <input type="password" name="pwd" id="mnml-pwd" class="mnml-input" size="20" autocomplete="current-password" required>
+                <p><label for=mnml-pwd>Password<br>
+                    <input type=password name=pwd id=mnml-pwd class=mnml-input size=20 autocomplete=current-password required>
                 </label></p>
                 <?php endif; ?>
                 <?php if ( strpos($settings->two_factor_auth, 'code') !== false ): ?>
-                <div id="mnml-2fa-section">
-                    <p><label for="mnml2fac">Security Code<br>
-                        <input type="number" name="mnml2fac" id="mnml2fac" class="mnml-input" size="20" autocomplete="one-time-code">
+                <div id=mnml-2fa-section>
+                    <p><label for=mnml2fac>Security Code<br>
+                        <input type=number name=mnml2fac id=mnml2fac class=mnml-input size=20 autocomplete=one-time-code>
                     </label></p>
                 </div>
                 <?php endif; ?>
-                <p><input type="submit" id="mnml-submit" class="mnml-button" value="Log In" disabled>
-                <input type="hidden" name="interim-login" value="1">
-                <input type="hidden" name="login_token" id="mnml-token">
-                <input type="hidden" name="mnml2fak" id="mnml2fak">
+                <p><input type=submit id=mnml-submit class=mnml-button value="Log In" disabled>
+                <input type=hidden name=interim-login value=1>
+                <input type=hidden name=login_token id=mnml-token>
+                <input type=hidden name=mnml2fak id=mnml2fak>
             </div>
         <?php else: ?>
-            <div id="mnml-login-section">
-                <p><label for="mnml2falog">Username, Email, or Phone Number<br>
-                    <input type="text" name="mnml2falog" id="mnml2falog" class="mnml-input" size="20" autocapitalize="off" autocomplete="email tel" required>
+            <div id=mnml-login-section>
+                <p><label for=mnml2falog>Username, Email, or Phone Number<br>
+                    <input type=text name=mnml2falog id=mnml2falog class=mnml-input size=20 autocapitalize=off autocomplete="email tel" required>
                 </label></p>
                 <?php if ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none'): ?>
-                <p><label for="mnml-pwd">Password<br>
-                    <input type="password" name="pwd" id="mnml-pwd" class="mnml-input" value="" size="20" autocomplete="current-password" required>
+                <p><label for=mnml-pwd>Password<br>
+                    <input type=password name=pwd id=mnml-pwd class=mnml-input size=20 autocomplete=current-password required>
                 </label></p>
                 <?php endif; ?>
             </div>
             <?php if ( strpos($settings->two_factor_auth, 'code') !== false ): ?>
-            <div id="mnml-2fa-section">
-                <p><label for="">security code:<br>
-                    <input type="number" name="mnml2fac" id="mnml2fac" class="mnml-input" size="20" autocomplete="one-time-code">
+            <div id=mnml-2fa-section>
+                <p><label for=mnml2fac>security code:<br>
+                    <input type=number name=mnml2fac id=mnml2fac class=mnml-input size=20 autocomplete=one-time-code>
                 </label></p>
             </div>
             <?php endif; ?>
-            <p><label><input name="rememberme" type="checkbox" id="mnml-rememberme" value="forever"> Remember Me</label></p>
-            <p><input type="submit" id="mnml-submit" class="mnml-button" value="Log In" disabled>
-            <input type="hidden" name="login_token" id="mnml-token">
-            <input type="hidden" name="mnml2fak" id="mnml2fak">
+            <p><label><input name=rememberme type=checkbox id=mnml-rememberme value=forever> Remember Me</label></p>
+            <p><input type=submit id=mnml-submit class=mnml-button value="Log In" disabled>
+            <input type=hidden name=login_token id=mnml-token>
+            <input type=hidden name=mnml2fak id=mnml2fak>
             <?php if (isset($_GET['redirect_to']) && '' !== $_GET['redirect_to']): ?>
-                <input type="hidden" name="redirect_to" value="<?php echo esc_url_raw($_GET['redirect_to']); ?>">
+                <input type=hidden name=redirect_to value="<?php echo esc_url_raw($_GET['redirect_to']); ?>">
             <?php endif; ?>
         <?php endif; ?>
     </form>
