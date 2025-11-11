@@ -49,15 +49,6 @@ add_filter('login_url', __NAMESPACE__ . '\custom_login_url', 10, 3);
 // I think this periodically sends you to wp-login.php to confirm the email, and that url is blocked.
 add_filter( 'admin_email_check_interval', '__return_false' );
 
-// Minify CSS (from potted.php)
-function minify_css($css) {
-    $css = preg_replace('/\s+/', ' ', $css);
-    $css = preg_replace('/;(?=\s*})/', '', $css);
-    $css = preg_replace('/(,|:|;|\{|}) /', '$1', $css);
-    $css = preg_replace('/ (:|;|\{|})/', '$1', $css);
-    return trim($css);
-}
-
 function get_login_page_url() {
     $pages = get_posts([
         'post_type'   => 'page',
@@ -98,6 +89,20 @@ function redirect_to_homepage_login() {
         echo '<meta name=robots content="noindex, nofollow">';
         if (!empty($settings->allow_api_discovery)) rest_output_link_wp_head();
         echo '<title>' . esc_html(get_bloginfo('name', 'display')) . '</title>';
+
+        // do styling
+        $add_css = function( $url, $path ) {
+            if ( file_exists( $path ) ) echo '<link rel=stylesheet href="'. esc_url( $url ) .'" />';
+        };
+        $parent_uri = get_template_directory_uri();
+        $child_uri  = get_stylesheet_directory_uri();
+        $add_css( $parent_uri . '/style.css', get_template_directory() . '/style.css' );
+        $add_css( $parent_uri . '/login.css', get_template_directory() . '/login.css' );
+        if ( $parent_uri !== $child_uri ) {// if child theme in use
+            $add_css( $child_uri . '/style.css', get_stylesheet_directory() . '/style.css' );
+            $add_css( $child_uri . '/login.css', get_stylesheet_directory() . '/login.css' );
+        }
+
         echo do_shortcode('[mnml_login]');
         exit;
     }
@@ -134,26 +139,14 @@ function login_shortcode($atts) {
         header('Cache-Control: public, max-age=3600');
     }
 
-    // Load theme styles (child/parent, from potted.php)
-    $css = file_get_contents(get_template_directory() . '/style.css');
-    if (get_template_directory() !== get_stylesheet_directory()) {
-        $css .= file_get_contents(get_stylesheet_directory() . '/style.css');
-    }
-    $css .= @file_get_contents(get_template_directory() . '/login.css') ?: '';
-    if (get_template_directory() !== get_stylesheet_directory()) {
-        $css .= @file_get_contents(get_stylesheet_directory() . '/login.css') ?: '';
-    }
-    $css .= '
+    ob_start();
+?>
+<style>
 #mnml-login { max-width: 400px; margin: 50px auto; padding: 20px; }
 .mnml-input { width: 100%; padding: 8px; margin: 5px 0; }
 #mnml-2fa-section, .mnml-link-sent #mnml-login-section, #simple-login-form { display: none }
 .mnml-link-sent #mnml-2fa-section { display: block; }
-';
-
-    // Cache-friendly output
-    ob_start();
-?>
-<style><?php echo minify_css($css); ?></style>
+</style>
 <form id=simple-login-form method=post action="<?php echo rest_url('mnml_login/v1/simple_login'); ?>">
     <input type=text  name=log id=user_login class=input>
     <input type=password name=pwd id=user_pass class=input>
@@ -210,7 +203,7 @@ function login_shortcode($atts) {
         <?php else: ?>
             <div id=mnml-login-section>
                 <p><label for=mnml2falog>Username, Email, or Phone Number<br>
-                    <input type=text name=mnml2falog id=mnml2falog class=mnml-input size=20 autocapitalize=off autocomplete="email tel" required>
+                    <input type=text name=mnml2falog id=mnml2falog class=mnml-input size=20 autocapitalize=off autocomplete="email tel username" required>
                 </label></p>
                 <?php if ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none'): ?>
                 <p><label for=mnml-pwd>Password<br>
@@ -254,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.addEventListener('mousemove', () => hasInteracted = true, { once: true });
 
-    <?php if (! empty($settings->use_session_token)): ?>
+    <?php if (! empty($settings->enable_bot_protection)): ?>
     let tokenFetched = false;
     // Fetch token
     const fetchToken = () => {
@@ -287,12 +280,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     <?php else: ?>
     form.querySelectorAll('#mnml-submit').forEach(el => el.removeAttribute('disabled'));
-    <?php endif; // use_session_token ?>
+    <?php endif; // enable_bot_protection ?>
 
     // Unified form submission
     form.addEventListener('submit', e => {
         e.preventDefault();
-        if (!hasInteracted || (<?php echo ! empty($settings->use_session_token) ? 'true' : 'false'; ?> && !tokenFetched)) {
+        if (!hasInteracted || (<?php echo ! empty($settings->enable_bot_protection) ? 'true' : 'false'; ?> && !tokenFetched)) {
             msgEl.textContent = 'Please interact with the form and enable JavaScript.';
             return;
         }
@@ -453,7 +446,7 @@ function auth_handler($request) {
     }
 
     // Token validation
-    if (! empty($settings->use_session_token)) {
+    if (! empty($settings->enable_bot_protection)) {
         session_id() || session_start();
         $secret        = wp_salt('nonce');
         $posted_token  = $request->get_param('login_token') ?? '';
@@ -513,7 +506,7 @@ function auth_handler($request) {
     // Authenticate 2FA code
     if (! empty($request->get_param('mnml2fac')) && ! empty($request->get_param('mnml2fak'))) {
         $code_key = $request->get_param('mnml2fak');
-        if (! empty($settings->use_session_token)) {
+        if (! empty($settings->enable_bot_protection)) {
             session_id() || session_start();
             $session_token = $_SESSION['mnml_login_token'] ?? '';
             if ($code_key !== $session_token) {
@@ -634,7 +627,7 @@ function auth_handler($request) {
         $transient_token = false;
         if (strpos($settings->two_factor_auth, 'code') !== false) {
             $code = sprintf("%06s", random_int(0, 999999));
-            $transient_token = ! empty($settings->use_session_token) ? ($session_token ?? random()) : random();
+            $transient_token = ! empty($settings->enable_bot_protection) ? ($session_token ?? random()) : random();
         }
 
         if ($settings->two_factor_auth === 'code') {
@@ -749,7 +742,7 @@ function auth_handler($request) {
 function magic_link_handler($wp) {
     global $settings;
     if (! empty($_GET['tfal'])) {
-        if (! empty($settings->use_session_token)) {
+        if (! empty($settings->enable_bot_protection)) {
             ! session_id() || session_start();
         }
         $login_data = get_transient("mnml_login_{$_GET['tfal']}");
@@ -1010,6 +1003,8 @@ function extend_session_page_load() {
 // Block wp-login.php
 function block_wp_login() {
     if (false !== strpos($_SERVER['REQUEST_URI'], 'wp-login.php')) {
+        $settings = (object) get_option('mnml_login', []);
+        if ( empty( $settings->block_wp_login ) ) return;
         status_header(403);
         die();
     }
@@ -1046,10 +1041,11 @@ function settings_page() {
     $fields = array_fill_keys([
         'two_factor_auth',
         'no_login_alerts',
+        'block_wp_login',
         'private_site',
         'use_custom_homepage',
         'allow_api_discovery',
-        'use_session_token',
+        'enable_bot_protection',
         'session_extend_timeout',
         'session_extend_max_inactive',
         'code_settings',
@@ -1072,7 +1068,8 @@ function settings_page() {
         'telephone_user_meta',
     ], ['type' => 'text']);
 
-    $fields['use_session_token']                           = ['type' => 'checkbox', 'desc' => ''];
+    $fields['block_wp_login']                              = ['type' => 'checkbox', 'desc' => 'Block the standard login form. Recommended once you have this plugin’s custom login working.', 'label' => 'Block wp-login.php'];
+    $fields['enable_bot_protection']                       = ['type' => 'checkbox', 'desc' => 'Requires user interaction and JavaScript to submit the form.'];
     $fields['code_settings']                               = ['type' => 'section', 'show' => ['two_factor_auth' => 'code']];
     $fields['private_site']                                = ['type' => 'checkbox', 'desc' => 'Restrict site to logged-in users and redirect all URLs to homepage with login form'];
     $fields['allow_api_discovery']                         = ['type' => 'checkbox', 'show' => [ 'private_site' => 'any', 'use_custom_homepage' => 'empty' ], 'desc' => 'Include the WP REST API discovery <link> in the <head> of the login page.  This will make your site more obviously a WordPress site, but you might need it for certain 3rd-party integrations'];
