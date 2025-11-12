@@ -13,17 +13,17 @@ function send_via_twilio( $to, $code='', $link='' ) {
 	$post = [ 'To' => $to ];
 
 	$settings = (object) get_option( 'mnml_login' );
-	$sid = $setting->twilio_account_sid;// Account SID
-	$user = $setting->twilio_api_sid;// API SID
-	$pass = $setting->twilio_api_secret;// API Secret
+	$sid = $settings->twilio_account_sid;// Account SID
+	$user = $settings->twilio_api_sid;// API SID
+	$pass = $settings->twilio_api_secret;// API Secret
 
 	// phone OR can just be a text string if supported country, and may need to be registered: https://www.twilio.com/docs/glossary/what-alphanumeric-sender-id#twilio-docs-content-area
-	if ( !empty( $setting->twilio_from ) ) {
-		$post['From'] = trim( $setting->twilio_from, ' +' );
+	if ( !empty( $settings->twilio_from ) ) {
+		$post['From'] = trim( $settings->twilio_from, ' +' );
 		if ( is_numeric( $post['From'] ) ) $post['From'] = '+'. $post['From'];
 	}
 
-	if ( !empty( $setting->twilio_messaging_service_sid ) ) $post['MessagingServiceSid'] = $setting->twilio_messaging_service_sid;// starts with MG https://help.twilio.com/articles/223181308-Getting-started-with-Messaging-Services
+	if ( !empty( $settings->twilio_messaging_service_sid ) ) $post['MessagingServiceSid'] = $settings->twilio_messaging_service_sid;// starts with MG https://help.twilio.com/articles/223181308-Getting-started-with-Messaging-Services
 
 	if ( empty( $post['From'] ) && empty( $post['MessagingServiceSid'] ) ) return false;// need one or the other to send.
 
@@ -31,15 +31,15 @@ function send_via_twilio( $to, $code='', $link='' ) {
 
 	if ( $code ) {
 		$body_c = "Your security code is $code";// default
-		if ( !empty($setting->code_sms_message) ) {
-			$body_c = str_ireplace( '%code%', $code, $setting->code_sms_message, $n );
+		if ( !empty($settings->code_sms_message) ) {
+			$body_c = str_ireplace( '%code%', $code, $settings->code_sms_message, $n );
 			if (0===$n) $body_c .= " $code";// add the code on the end if they didn't use the %code% merge tag in their message
 		}
 	}
 	if ( $link ) {
 		$body_l = "Click to sign in: $link";// default
-		if ( !empty($setting->link_sms_message) ) {
-			$body_l = str_ireplace( '%link%', $link, $setting->link_sms_message, $n );
+		if ( !empty($settings->link_sms_message) ) {
+			$body_l = str_ireplace( '%link%', $link, $settings->link_sms_message, $n );
 			if (0===$n) $body_l .= " $link";// add the code on the end if they didn't use the %code% merge tag in their message
 		}
 		if ( $body_c ) $body_l = " OR " . lcfirst( $body_l );

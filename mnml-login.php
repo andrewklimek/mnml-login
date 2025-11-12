@@ -83,6 +83,13 @@ function redirect_to_homepage_login() {
         // let the theme's template load normally (user must add [mnml_login] to homepage content)
         if (!empty($settings->use_custom_homepage)) return;
 
+        // Set cache headers
+        if (isset($_GET['action']) && in_array($_GET['action'], ['lostpassword', 'rp'], true) || isset($_GET['interim-login'])) {
+            header('Cache-Control: no-store');
+        } else {
+            header('Cache-Control: public, max-age=3600');
+        }
+
         status_header(200);
         echo '<!DOCTYPE html><html lang=en>';
         echo '<meta name=viewport content="width=device-width, initial-scale=1">';
@@ -126,18 +133,13 @@ add_shortcode('mnml_logged_out', function ($atts, $content = null) {
 });
 
 // Login shortcode
-function login_shortcode($atts) {
+function login_shortcode( $atts ) {
     $settings = (object) get_option('mnml_login', []);
     if (is_user_logged_in()) {
-        return ''; // Portals handle logged-in content separately
+        return '';// Portals handle logged-in content separately
     }
 
-    // Set cache headers
-    if (isset($_GET['action']) && in_array($_GET['action'], ['lostpassword', 'rp'], true) || isset($_GET['interim-login'])) {
-        header('Cache-Control: no-store');
-    } else {
-        header('Cache-Control: public, max-age=3600');
-    }
+    $redirect = $_GET['redirect_to'] ?? $atts['redirect'] ?? '';
 
     ob_start();
 ?>
@@ -222,12 +224,12 @@ function login_shortcode($atts) {
             <p><input type=submit id=mnml-submit class=mnml-button value="Log In" disabled>
             <input type=hidden name=login_token id=mnml-token>
             <input type=hidden name=mnml2fak id=mnml2fak>
-            <?php if (isset($_GET['redirect_to']) && '' !== $_GET['redirect_to']): ?>
-                <input type=hidden name=redirect_to value="<?php echo esc_url_raw($_GET['redirect_to']); ?>">
+            <?php if ($redirect) : ?>
+                <input type=hidden name=redirect_to value="<?php echo sanitize_url($redirect); ?>">
             <?php endif; ?>
         <?php endif; ?>
     </form>
-    <?php if (!isset($_GET['interim-login'])): ?>
+    <?php if ( !isset($_GET['interim-login']) && ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none') ): ?>
     <p><a href="<?php echo esc_url(isset($_GET['action']) && $_GET['action'] === 'lostpassword' ? remove_query_arg('action', esc_url_raw($_SERVER['REQUEST_URI'])) : add_query_arg(['action' => 'lostpassword'], esc_url_raw($_SERVER['REQUEST_URI']))); ?>">
     <?php echo isset($_GET['action']) && $_GET['action'] === 'lostpassword' ? 'Log in' : 'Lost Password'; ?></a></p>
     <?php endif; ?>
@@ -535,7 +537,7 @@ function auth_handler($request) {
             $response['interim'] = true;
             $response['message'] = 'Login successful.';
         } else {
-            $response['redirect'] = ! empty($request->get_param('redirect_to')) ? $request->get_param('redirect_to') : admin_url();
+            $response['redirect'] = ! empty($request->get_param('redirect_to')) ? wp_validate_redirect( $request->get_param('redirect_to') ) : admin_url();
         }
         error_log("MnmlLogin: 2FA login successful for user: {$user->user_login}");
         return rest_ensure_response($response);
@@ -644,10 +646,12 @@ function auth_handler($request) {
                     if ($sent) {
                         $sent = 'phone';
                         $return = 'phone';
+                    } else {
+                        if ( !empty( $settings->dont_fallback_to_email ) ) $dont_email = true;
                     }
                 }
             }
-            if (! $sent) {
+            if (! $sent && empty( $dont_email ) ) {
                 $email = $user->user_email;
                 if (! $email) {
                     error_log("MnmlLogin: No email for user: {$user->user_login}");
@@ -686,14 +690,16 @@ function auth_handler($request) {
                     $phone = get_user_meta($user->ID, $meta_key, true);
                 }
                 if ($phone) {
-                    $sent = send_via_twilio($phone, false, $link);
+                    $sent = send_via_twilio($phone, $code, $link);
                     if ($sent) {
                         $sent = 'phone';
                         $return = 'phone';
+                    } else {
+                        if ( !empty( $settings->dont_fallback_to_email ) ) $dont_email = true;
                     }
                 }
             }
-            if (! $sent) {
+            if (! $sent && empty( $dont_email ) ) {
                 $email = $user->user_email;
                 $subject = $settings->link_email_subject ?? 'Your sign-in link';
                 $body = $settings->link_email_body ?? 'Hello %name%, here is the sign-in link you requested';
@@ -732,7 +738,7 @@ function auth_handler($request) {
         $response['interim'] = true;
         $response['message'] = 'Login successful.';
     } else {
-        $response['redirect'] = ! empty($request->get_param('redirect_to')) ? $request->get_param('redirect_to') : admin_url();
+        $response['redirect'] = ! empty($request->get_param('redirect_to')) ? wp_validate_redirect( $request->get_param('redirect_to') ) : admin_url();
     }
     error_log("MnmlLogin: Login successful for user: {$user->user_login}");
     return rest_ensure_response($response);
@@ -752,8 +758,8 @@ function magic_link_handler($wp) {
             wp_die('Invalid or expired link.', 'Error', ['response' => 400]);
         }
         if (! empty($login_data->ip) && $login_data->ip !== ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'])) {
-            error_log("MnmlLogin: IP mismatch for magic link: stored={$login_data->ip}, current={$_SERVER['REMOTE_ADDR']}");
-            wp_die('IP mismatch.', 'Error', ['response' => 403]);
+            error_log("MnmlLogin: IP mismatch for magic link: stored={$login_data->ip}, current=" . ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR']) );
+            // wp_die('IP mismatch.', 'Error', ['response' => 403]);
         }
         $user = get_user_by('id', $login_data->id);
         if (! $user) {
@@ -1065,6 +1071,7 @@ function settings_page() {
         'twilio_api_secret',
         'twilio_messaging_service_sid',
         'twilio_from',
+        'dont_fallback_to_email',
         'telephone_user_meta',
     ], ['type' => 'text']);
 
@@ -1096,6 +1103,7 @@ function settings_page() {
     $fields['twilio_account_sid']['before']                = '<h3>Twilio settings for SMS codes instead of email</h3>';
     $fields['twilio_account_sid']['placeholder']           = 'AC...';
     $fields['twilio_messaging_service_sid']['placeholder'] = 'MG...';
+    $fields['dont_fallback_to_email']                      = ['type' => 'checkbox', 'desc' => 'If a user has a phone number set, and the sms fail to send, do not fall back to sending email.'];
 
     $options  = ['mnml_login' => $fields];
     $endpoint = rest_url('mnml_login/v1/settings');
