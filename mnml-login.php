@@ -134,27 +134,33 @@ add_shortcode('mnml_logged_out', function ($atts, $content = null) {
 
 // Login shortcode
 function login_shortcode( $atts ) {
-    $settings = (object) get_option('mnml_login', []);
+    
     if (is_user_logged_in()) {
-        return '';// Portals handle logged-in content separately
+        return '';
     }
+    $settings = (object) get_option('mnml_login', []);
 
     $redirect = $_GET['redirect_to'] ?? $atts['redirect'] ?? '';
 
+    $class = isset($atts['class']) ? ' class="'. $atts['class'] .'"' : '';
+
     ob_start();
-?>
-<style>
-#mnml-login { max-width: 400px; margin: 50px auto; padding: 20px; }
-.mnml-input { width: 100%; padding: 8px; margin: 5px 0; }
-#mnml-2fa-section, .mnml-link-sent #mnml-login-section, #simple-login-form { display: none }
-.mnml-link-sent #mnml-2fa-section { display: block; }
-</style>
+
+    echo "<style>";
+    if ( empty( $atts['no_styling'] ) ) {
+        echo "#mnml-login{max-width:400px;margin:50px auto;padding:20px}";
+        echo ".mnml-input{width:100%;padding:8px;margin:5px 0}";
+    }
+    echo "#mnml-2fa-section,.mnml-link-sent #mnml-login-section,#simple-login-form{display:none}";
+    echo ".mnml-link-sent #mnml-2fa-section{display:block}";
+    echo "</style>";
+    ?>
 <form id=simple-login-form method=post action="<?php echo rest_url('mnml_login/v1/simple_login'); ?>">
     <input type=text  name=log id=user_login class=input>
     <input type=password name=pwd id=user_pass class=input>
     <input type=submit value=Login>
 </form>
-<div id=mnml-login>
+<div id=mnml-login<?php echo $class; ?>>
     <p id=mnml-login-msg class=mnml-login-msg></p>
     <form id=mnml-login-form method=post>
         <?php if (isset($_GET['action']) && $_GET['action'] === 'lostpassword'): ?>
