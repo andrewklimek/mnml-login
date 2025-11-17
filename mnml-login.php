@@ -188,7 +188,7 @@ function login_shortcode( $atts ) {
             </div>
         <?php elseif (isset($_GET['interim-login'])): ?>
             <div id=mnml-login-section>
-                <p><label for=mnml2falog>Username, Email, or Phone Number<br>
+                <p><label for=mnml2falog>Username or Email<br>
                     <input type=text name=mnml2falog id=mnml2falog class=mnml-input size=20 autocapitalize=off autocomplete="email tel" required>
                 </label></p>
                 <?php if ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none'): ?>
@@ -210,7 +210,7 @@ function login_shortcode( $atts ) {
             </div>
         <?php else: ?>
             <div id=mnml-login-section>
-                <p><label for=mnml2falog>Username, Email, or Phone Number<br>
+                <p><label for=mnml2falog>Username or Email<br>
                     <input type=text name=mnml2falog id=mnml2falog class=mnml-input size=20 autocapitalize=off autocomplete="email tel username" required>
                 </label></p>
                 <?php if ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none'): ?>
@@ -309,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const is2FACode = formData.get('mnml2fac') && formData.get('mnml2fak');
         const endpoint = '<?php echo rest_url('mnml_login/v1/auth'); ?>';
         if (!isLostPassword && !isResetPassword && !isInterimLogin && !is2FACode && !formData.get('mnml2falog')) {
-            msgEl.textContent = 'Please enter a username, email, or phone number.';
+            msgEl.textContent = 'Please enter a Username or Email.';
             msgEl.style.display = 'block';
             submitButton.disabled = false;
             submitButton.value = '<?php echo strpos($settings->two_factor_auth, 'link') !== false ? 'Get Sign-on Link' : 'Log In'; ?>';
@@ -371,7 +371,11 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 msgEl.textContent = data.message || 'An error occurred.';
                 submitButton.disabled = false;
-                submitButton.value = formData.get('action') === 'lostpassword' ? 'Get New Password' : isResetPassword ? 'Reset Password' : isInterimLogin ? 'Log In' : '<?php echo strpos($settings->two_factor_auth, 'link') !== false ? 'Get Sign-on Link' : 'Log In'; ?>';
+                if (data.message && ~data.message.indexOf('code') ) {
+                    submitButton.value = 'Submit Code';
+                } else {
+                    submitButton.value = formData.get('action') === 'lostpassword' ? 'Get New Password' : isResetPassword ? 'Reset Password' : isInterimLogin ? 'Log In' : '<?php echo strpos($settings->two_factor_auth, 'link') !== false ? 'Get Sign-on Link' : 'Log In'; ?>';
+                }
             }
         })
         .catch(() => {
@@ -419,7 +423,7 @@ function trap_handler($request) {
     $ip      = $_SERVER['HTTP_X_CLIENT_IP'] ?? $_SERVER['REMOTE_ADDR'];
     $ua      = $_SERVER['HTTP_USER_AGENT'] ?? 'none';
     $referer = $_SERVER['HTTP_REFERER'] ?? 'none';
-    error_log("MnmlLogin: Bot caught in honeypot form from $ip with UA $ua and referer $referer");
+    debug("MnmlLogin: Bot caught in honeypot form from $ip with UA $ua and referer $referer");
     http_response_code(403);
     die();
     return new \WP_Error('forbidden', 'Invalid request.', ['status' => 403]);
@@ -435,7 +439,7 @@ function get_login_token($request) {
     $encrypted_token              = base64_encode(openssl_encrypt($token_data, 'AES-256-CBC', $secret, 0, substr($secret, 0, 16)));
     $_SESSION['mnml_login_token'] = $encrypted_token;
     $_SESSION['form_load_time']   = time();
-    error_log("MnmlLogin: Token generated for IP: {$_SERVER['REMOTE_ADDR']}");
+    debug("MnmlLogin: Token generated for IP: {$_SERVER['REMOTE_ADDR']}");
     return rest_ensure_response(['success' => true, 'data' => ['token' => $encrypted_token]]);
 }
 
@@ -443,13 +447,13 @@ function get_login_token($request) {
 function auth_handler($request) {
     $settings = (object) get_option('mnml_login', []);
 
-    error_log("MnmlLogin: Processing /auth POST");
+    debug("MnmlLogin: Processing /auth POST");
 
     // Basic bot checks
     $user_agent   = $_SERVER['HTTP_USER_AGENT'] ?? '';
     $bot_patterns = '/bot|crawler|spider|curl|wget|python-requests|httpclient|scrapy|go-http-client|libwww-perl|java\/|php\/|okhttp|axios/i';
     if (empty($user_agent) || ! isset($_SERVER['HTTP_ACCEPT']) || ! isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) || preg_match($bot_patterns, $user_agent)) {
-        error_log("MnmlLogin: Bot detected: $user_agent");
+        debug("MnmlLogin: Bot detected: $user_agent");
         return new \WP_Error('forbidden', 'Access denied', ['status' => 403]);
     }
 
@@ -460,22 +464,22 @@ function auth_handler($request) {
         $posted_token  = $request->get_param('login_token') ?? '';
         $session_token = $_SESSION['mnml_login_token'] ?? '';
         if (! $posted_token || $posted_token !== $session_token) {
-            error_log("MnmlLogin: Invalid session token from IP: {$_SERVER['REMOTE_ADDR']}");
+            debug("MnmlLogin: Invalid session token from IP: {$_SERVER['REMOTE_ADDR']}");
             return new \WP_Error('forbidden', 'Invalid session.', ['status' => 403]);
         }
         $decrypted = openssl_decrypt(base64_decode($posted_token), 'AES-256-CBC', $secret, 0, substr($secret, 0, 16));
         if (! $decrypted || strpos($decrypted, '|') === false) {
-            error_log("MnmlLogin: Invalid token decryption from IP: {$_SERVER['REMOTE_ADDR']}");
+            debug("MnmlLogin: Invalid token decryption from IP: {$_SERVER['REMOTE_ADDR']}");
             return new \WP_Error('forbidden', 'Invalid token.', ['status' => 403]);
         }
         list($uuid, $timestamp) = explode('|', $decrypted);
         if (time() - $timestamp > 300) {
-            error_log("MnmlLogin: Session expired from IP: {$_SERVER['REMOTE_ADDR']}");
+            debug("MnmlLogin: Session expired from IP: {$_SERVER['REMOTE_ADDR']}");
             return new \WP_Error('forbidden', 'Session expired.', ['status' => 403]);
         }
         if (! empty($settings->session_speed_check)) {
             if (time() - ($_SESSION['form_load_time'] ?? 0) < 2) {
-                error_log("MnmlLogin: Form submitted too quickly from IP: {$_SERVER['REMOTE_ADDR']}");
+                debug("MnmlLogin: Form submitted too quickly from IP: {$_SERVER['REMOTE_ADDR']}");
                 return new \WP_Error('forbidden', 'Form submitted too quickly.', ['status' => 403]);
             }
         }
@@ -483,10 +487,10 @@ function auth_handler($request) {
 
     // Handle lost password
     if ($request->get_param('action') === 'lostpassword') {
-        error_log("MnmlLogin: Processing lost password");
+        debug("MnmlLogin: Processing lost password");
         $user_data = retrieve_password($request->get_param('user_login'));
         if (is_wp_error($user_data)) {
-            error_log("MnmlLogin: Lost password error: " . $user_data->get_error_message());
+            debug("MnmlLogin: Lost password error for " . $request->get_param('user_login') . ": " . $user_data->get_error_message());
             return new \WP_Error('bad_request', $user_data->get_error_message(), ['status' => 400]);
         }
         return rest_ensure_response(['success' => true, 'message' => 'Password reset email sent.']);
@@ -498,54 +502,88 @@ function auth_handler($request) {
         $rp_login = $request->get_param('rp_login');
         $pass1 = $request->get_param('pass1');
         if (!$rp_key || !$rp_login || !$pass1) {
-            error_log("MnmlLogin: Missing reset parameters from IP: {$_SERVER['REMOTE_ADDR']}");
+            debug("MnmlLogin: Missing reset parameters from IP: {$_SERVER['REMOTE_ADDR']}");
             return new \WP_Error('bad_request', 'Invalid reset request.', ['status' => 400]);
         }
         $user = check_password_reset_key($rp_key, $rp_login);
         if (is_wp_error($user)) {
-            error_log("MnmlLogin: Invalid reset key or login: {$user->get_error_message()}");
+            debug("MnmlLogin: Invalid reset key or login: {$user->get_error_message()}");
             return new \WP_Error('bad_request', 'Invalid or expired reset link.', ['status' => 400]);
         }
         reset_password($user, $pass1);
-        error_log("MnmlLogin: Password reset successful for user: {$user->user_login}");
+        debug("MnmlLogin: Password reset successful for user: {$user->user_login}");
         return rest_ensure_response(['success' => true, 'message' => 'Password reset successful. Please log in.']);
     }
 
-    // Authenticate 2FA code
+   // Authenticate 2FA code
     if (! empty($request->get_param('mnml2fac')) && ! empty($request->get_param('mnml2fak'))) {
-        $code_key = $request->get_param('mnml2fak');
+        $code_key     = $request->get_param('mnml2fak');
+        $posted_code  = $request->get_param('mnml2fac');
+        $transient_key = "mnml_login_{$code_key}";
+
         if (! empty($settings->enable_bot_protection)) {
             session_id() || session_start();
             $session_token = $_SESSION['mnml_login_token'] ?? '';
             if ($code_key !== $session_token) {
-                error_log("MnmlLogin: Invalid code key from IP: {$_SERVER['REMOTE_ADDR']}");
+                debug("MnmlLogin: Invalid code key from IP: {$_SERVER['REMOTE_ADDR']}");
                 return new \WP_Error('bad_request', 'Invalid code key.', ['status' => 400]);
             }
         }
-        $login_data = get_transient("mnml_login_{$code_key}_{$request->get_param('mnml2fac')}");
+
+        $login_data = get_transient($transient_key);
         $login_data = (object) $login_data;
-        if (empty($login_data->id)) {
-            error_log("MnmlLogin: Invalid or expired code: {$request->get_param('mnml2fac')}");
-            return new \WP_Error('bad_request', 'Invalid or expired code.', ['status' => 400]);
+
+        if (empty($login_data->id) || empty($login_data->code)) {
+            debug("MnmlLogin: No valid 2FA session for token: $code_key");
+            return new \WP_Error('bad_request', 'Invalid or expired session.', ['status' => 400]);
         }
+
+        // Wrong code
+        if ($posted_code !== $login_data->code) {
+            $login_data->attempts = ($login_data->attempts ?? 0) + 1;
+
+            if ($login_data->attempts > 3) {
+                delete_transient($transient_key);
+                debug("MnmlLogin: 2FA failed 3 times – session deleted for token $code_key");
+                return new \WP_Error('bad_request', 'Too many incorrect attempts. Please start again.', ['status' => 400]);
+            }
+
+            // Save updated attempt count
+            set_transient($transient_key, $login_data, 300);
+
+            $left = 4 - $login_data->attempts;
+            return new \WP_Error('bad_request',
+                "Incorrect code – $left " . _n('try', 'tries', $left) . ' left.',
+                ['status' => 400]);
+        }
+
+        // Correct code → login
+        delete_transient($transient_key);
+
         $user = get_user_by('id', $login_data->id);
         if (! $user) {
-            error_log("MnmlLogin: User not found for ID: {$login_data->id}");
+            debug("MnmlLogin: User not found for ID: {$login_data->id}");
             return new \WP_Error('bad_request', 'User not found.', ['status' => 400]);
         }
+
         if (empty($settings->no_login_alerts)) {
             $message = "New login from IP {$_SERVER['REMOTE_ADDR']}";
             wp_mail($user->user_email, $message, $message . "\n\nuser agent: {$_SERVER['HTTP_USER_AGENT']}");
         }
+
         wp_set_auth_cookie($user->ID, ! empty($request->get_param('rememberme')));
+
         $response = ['success' => true];
         if ($request->get_param('interim-login') === '1') {
             $response['interim'] = true;
             $response['message'] = 'Login successful.';
         } else {
-            $response['redirect'] = ! empty($request->get_param('redirect_to')) ? wp_validate_redirect( $request->get_param('redirect_to') ) : admin_url();
+            $response['redirect'] = ! empty($login_data->redirect)
+                ? wp_validate_redirect($login_data->redirect)
+                : admin_url();
         }
-        error_log("MnmlLogin: 2FA login successful for user: {$user->user_login}");
+
+        debug("MnmlLogin: 2FA login successful for user: {$user->user_login}");
         return rest_ensure_response($response);
     }
 
@@ -556,11 +594,11 @@ function auth_handler($request) {
         'remember'      => ! empty($request->get_param('rememberme')),
     ];
     if (empty($creds['user_login'])) {
-        error_log("MnmlLogin: Missing login for 2FA");
-        return new \WP_Error('bad_request', 'Please enter username, email, or phone number.', ['status' => 400]);
+        debug("MnmlLogin: Missing login for 2FA");
+        return new \WP_Error('bad_request', 'Please enter Username or Email.', ['status' => 400]);
     }
     if (empty($creds['user_login']) || (empty($creds['user_password']) && ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none'))) {
-        error_log("MnmlLogin: Missing credentials: login={$creds['user_login']}");
+        debug("MnmlLogin: Missing credentials: login={$creds['user_login']}");
         return new \WP_Error('bad_request', 'Please enter username/email and password.', ['status' => 400]);
     }
     // Find user
@@ -575,7 +613,7 @@ function auth_handler($request) {
                 $meta_key = $settings->telephone_user_meta ?? 'mnml2fano';
                 $users    = get_users(['meta_key' => $meta_key, 'meta_value' => $maybe_tel, 'number' => 2]);
                 if (count($users) > 1) {
-                    error_log("MnmlLogin: Multiple accounts with phone: $maybe_tel");
+                    debug("MnmlLogin: Multiple accounts with phone: $maybe_tel");
                 }
                 $user = current($users);
             }
@@ -585,20 +623,20 @@ function auth_handler($request) {
         $user = get_user_by('login', $creds['user_login']);
     }
     if (! $user) {
-        error_log("MnmlLogin: No user found for login: {$creds['user_login']}");
-        return new \WP_Error('bad_request', 'Invalid username, email, or phone number.', ['status' => 400]);
+        debug("MnmlLogin: No user found for login: {$creds['user_login']}");
+        return new \WP_Error('bad_request', 'Invalid Username or Email.', ['status' => 400]);
     }
 
     // Authenticate for code, disabled 2FA, or interim login with grace period
     if ($settings->two_factor_auth === 'code' || $settings->two_factor_auth === 'none') {
         $user_auth = wp_authenticate($creds['user_login'], $creds['user_password']);
         if (is_wp_error($user_auth)) {
-            error_log("MnmlLogin: Authentication failed: " . $user_auth->get_error_message());
+            debug("MnmlLogin: Authentication failed: " . $user_auth->get_error_message());
             return new \WP_Error('unauthorized', 'Invalid credentials.', ['status' => 401]);
         }
-        error_log( 'interim-login: ' . $request->get_param('interim-login') );
+        debug( 'interim-login: ' . $request->get_param('interim-login') );
         if ($request->get_param('interim-login') === '1' && $settings->two_factor_auth === 'code') {
-            error_log('running interim');
+            debug('running interim');
             if (!empty($_COOKIE[ LOGGED_IN_COOKIE ])) {
                 $cookie_elements = explode('|', $_COOKIE[ LOGGED_IN_COOKIE ]);
                 if (count($cookie_elements) === 4) {
@@ -607,11 +645,11 @@ function auth_handler($request) {
                     if ($user && $user->ID === $user_auth->ID) {
                         $sessions = get_user_meta($user->ID, 'session_tokens', true);
                         $cookie_hash = hash( 'sha256', $token );
-                        error_log(var_export($sessions,1));
-                        error_log($cookie_hash);
+                        debug(var_export($sessions,1));
+                        debug($cookie_hash);
                         if (isset($sessions[$cookie_hash]) && $sessions[$cookie_hash]['expiration'] + HOUR_IN_SECONDS >= time() && ($ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '') === $sessions[$cookie_hash]['ip']) {
                             wp_set_auth_cookie($user->ID, $creds['remember']);
-                            error_log("MnmlLogin: Interim login successful (2FA skipped via session fallback) for user: {$user->user_login}");
+                            debug("MnmlLogin: Interim login successful (2FA skipped via session fallback) for user: {$user->user_login}");
                             return rest_ensure_response(['success' => true, 'interim' => true, 'message' => 'Login successful.']);
                         }
                     }
@@ -660,7 +698,7 @@ function auth_handler($request) {
             if (! $sent && empty( $dont_email ) ) {
                 $email = $user->user_email;
                 if (! $email) {
-                    error_log("MnmlLogin: No email for user: {$user->user_login}");
+                    debug("MnmlLogin: No email for user: {$user->user_login}");
                     return new \WP_Error('bad_request', 'No email configured.', ['status' => 400]);
                 }
                 $subject = $settings->code_email_subject ?? 'Your security code is %code%';
@@ -675,10 +713,12 @@ function auth_handler($request) {
                 }
             }
             if ($sent) {
-                set_transient("mnml_login_{$transient_token}_{$code}", $login_data, 300);
-                error_log("MnmlLogin: 2FA code sent via $sent for user: {$user->user_login}");
+                $login_data->code = $code;
+                $login_data->attempts = 1;
+                set_transient("mnml_login_{$transient_token}", $login_data, 300);
+                debug("MnmlLogin: 2FA code sent via $sent for user: {$user->user_login}");
             } else {
-                error_log("MnmlLogin: Failed to send 2FA code for user: {$user->user_login}");
+                debug("MnmlLogin: Failed to send 2FA code for user: {$user->user_login}");
                 return new \WP_Error('server_error', 'Failed to send code.', ['status' => 500]);
             }
         }
@@ -719,12 +759,14 @@ function auth_handler($request) {
             }
             if ($sent) {
                 set_transient("mnml_login_{$key}", $login_data, 300);
-                error_log("MnmlLogin: Magic link sent via $sent for user: {$user->user_email}");
+                debug("MnmlLogin: Magic link sent via $sent for user: {$user->user_email}");
                 if (strpos($settings->two_factor_auth, 'code') !== false) {
-                    set_transient("mnml_login_{$transient_token}_{$code}", $login_data, 300);
+                    $login_data->code = $code;
+                    $login_data->attempts = 1;
+                    set_transient("mnml_login_{$transient_token}", $login_data, 300);
                 }
             } else {
-                error_log("MnmlLogin: Failed to send magic link for user: {$user->user_email}");
+                debug("MnmlLogin: Failed to send magic link for user: {$user->user_email}");
                 return new \WP_Error('server_error', 'Failed to send link.', ['status' => 500]);
             }
         }
@@ -746,7 +788,7 @@ function auth_handler($request) {
     } else {
         $response['redirect'] = ! empty($request->get_param('redirect_to')) ? wp_validate_redirect( $request->get_param('redirect_to') ) : admin_url();
     }
-    error_log("MnmlLogin: Login successful for user: {$user->user_login}");
+    debug("MnmlLogin: Login successful for user: {$user->user_login}");
     return rest_ensure_response($response);
 }
 
@@ -760,16 +802,16 @@ function magic_link_handler($wp) {
         $login_data = get_transient("mnml_login_{$_GET['tfal']}");
         $login_data = (object) $login_data;
         if (empty($login_data->id)) {
-            error_log("MnmlLogin: Invalid or expired magic link: {$_GET['tfal']}");
+            debug("MnmlLogin: Invalid or expired magic link: {$_GET['tfal']}");
             wp_die('Invalid or expired link.', 'Error', ['response' => 400]);
         }
         if (! empty($login_data->ip) && $login_data->ip !== ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'])) {
-            error_log("MnmlLogin: IP mismatch for magic link: stored={$login_data->ip}, current=" . ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR']) );
+            debug("MnmlLogin: IP mismatch for magic link: stored={$login_data->ip}, current=" . ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR']) );
             // wp_die('IP mismatch.', 'Error', ['response' => 403]);
         }
         $user = get_user_by('id', $login_data->id);
         if (! $user) {
-            error_log("MnmlLogin: User not found for magic link ID: {$login_data->id}");
+            debug("MnmlLogin: User not found for magic link ID: {$login_data->id}");
             wp_die('User not found.', 'Error', ['response' => 400]);
         }
         if (empty($settings->no_login_alerts)) {
@@ -778,7 +820,7 @@ function magic_link_handler($wp) {
         }
         wp_set_auth_cookie($user->ID, ! empty($login_data->rm));
         $redirect = ! empty($login_data->redirect) ? $login_data->redirect : admin_url();
-        error_log("MnmlLogin: Magic link login successful for user: {$user->user_login}");
+        debug("MnmlLogin: Magic link login successful for user: {$user->user_login}");
         status_header(302);
         wp_safe_redirect($redirect);
         exit;
@@ -793,12 +835,12 @@ function api_logout($request) {
 
     $nonce = $request->get_param('_wpnonce');
     if (! $nonce || ! wp_verify_nonce($nonce, 'log-out')) {
-        error_log("MnmlLogin: Invalid logout nonce");
+        debug("MnmlLogin: Invalid logout nonce");
         return new \WP_Error('bad_request', 'Invalid nonce.', ['status' => 400]);
     }
 
     wp_logout();
-    error_log("MnmlLogin: User logged out successfully");
+    debug("MnmlLogin: User logged out successfully");
     $redirect = $request->get_param('redirect_to') ? esc_url_raw($request->get_param('redirect_to')) : get_login_page_url();
     return rest_ensure_response(['success' => true, 'message' => 'Logged out.', 'redirect' => $redirect]);
 }
@@ -813,12 +855,12 @@ function logout_handler($wp) {
 
         $nonce = $_GET['_wpnonce'];
         if (! wp_verify_nonce($nonce, 'log-out')) {
-            error_log("MnmlLogin: Invalid logout nonce in URL");
+            debug("MnmlLogin: Invalid logout nonce in URL");
             wp_die('Invalid nonce.', 'Error', ['response' => 400]);
         }
 
         wp_logout();
-        error_log("MnmlLogin: User logged out successfully via URL");
+        debug("MnmlLogin: User logged out successfully via URL");
         $redirect = ! empty($_GET['redirect_to']) ? esc_url_raw($_GET['redirect_to']) : get_login_page_url();
         wp_safe_redirect($redirect);
         exit;
@@ -904,7 +946,7 @@ function extend_auth_cookie_2( $user_id ) {
     $sessions = get_user_meta($user->ID, 'session_tokens', true);
     $verifier = hash( 'sha256', $cookie_elements['token'] );
     if (!isset($sessions[$verifier])) {
-        error_log("MnmlLogin: Invalid session for session extension: user={$user->ID}");
+        debug("MnmlLogin: Invalid session for session extension: user={$user->ID}");
         do_action( 'auth_cookie_bad_session_token', $cookie_elements );
         return false;
     }
@@ -914,7 +956,7 @@ function extend_auth_cookie_2( $user_id ) {
     $sessions[$verifier]['expiration'] = time() + $timeout;
     update_user_meta($user->ID, 'session_tokens', $sessions);
     wp_set_auth_cookie($user->ID, !empty($sessions[$verifier]['remember']), '', $token);// this uses the standard expires time still...
-    error_log("MnmlLogin: Session extended on auth cookie expiration for user ID: {$user->ID}");
+    debug("MnmlLogin: Session extended on auth cookie expiration for user ID: {$user->ID}");
 
     do_action( 'auth_cookie_valid', $cookie_elements, $user );
 
@@ -924,7 +966,7 @@ function extend_auth_cookie_2( $user_id ) {
 
 // Extend session when auth cookie expires
 function extend_auth_cookie($cookie_elements) {
-    error_log('auth_cookie_expired');
+    debug('auth_cookie_expired');
     $settings = (object) get_option('mnml_login', []);
     if (empty($settings->session_extend_timeout) || empty($cookie_elements['username'])) {
         return false;
@@ -932,18 +974,18 @@ function extend_auth_cookie($cookie_elements) {
 
     $user = get_user_by('login', $cookie_elements['username']);
     if (!$user) {
-        error_log("MnmlLogin: User not found for expired cookie: {$cookie_elements['username']}");
+        debug("MnmlLogin: User not found for expired cookie: {$cookie_elements['username']}");
         return false;
     }
     $user_id = $user->ID;
 
     $sessions = get_user_meta($user_id, 'session_tokens', true);
     $cookie_hash = hash( 'sha256', $cookie_elements['token'] );
-    // error_log(var_export($sessions,1));
-    // error_log(var_export($cookie_hash,1));
+    // debug(var_export($sessions,1));
+    // debug(var_export($cookie_hash,1));
     $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
     if (!isset($sessions[$cookie_hash]) || $ip !== $sessions[$cookie_hash]['ip']) {
-        error_log("MnmlLogin: Invalid session or IP mismatch for session extension: user=$user_id, IP=$ip");
+        debug("MnmlLogin: Invalid session or IP mismatch for session extension: user=$user_id, IP=$ip");
         return false;
     }
 
@@ -952,7 +994,7 @@ function extend_auth_cookie($cookie_elements) {
     $sessions[$cookie_hash]['expiration'] = time() + $timeout;
     update_user_meta($user_id, 'session_tokens', $sessions);
     wp_set_auth_cookie($user_id, !empty($sessions[$cookie_hash]['remember']), '', $cookie_elements['token']);
-    error_log("MnmlLogin: Session extended on auth cookie expiration for user ID: $user_id");
+    debug("MnmlLogin: Session extended on auth cookie expiration for user ID: $user_id");
     $new_cookie = wp_generate_auth_cookie($user_id, $sessions[$cookie_hash]['expiration'], 'logged_in', $cookie_elements['token']);
     $_COOKIE[LOGGED_IN_COOKIE] = $new_cookie;
 }
@@ -969,7 +1011,7 @@ function extend_session_page_load() {
     update_user_meta($user_id, 'mnml_last_active', time()); // Track activity
     $last_active = (int) get_user_meta($user_id, 'mnml_last_active', true);
     if ($last_active < time() - ($settings->session_extend_max_inactive ?? 172800)) {
-        error_log("MnmlLogin: Skipping session extension due to inactivity for user ID: $user_id");
+        debug("MnmlLogin: Skipping session extension due to inactivity for user ID: $user_id");
         return;
     }
 
@@ -981,13 +1023,13 @@ function extend_session_page_load() {
         }
     }
     if (!$cookie) {
-        error_log("MnmlLogin: No auth cookie for session extension");
+        debug("MnmlLogin: No auth cookie for session extension");
         return;
     }
 
     $cookie_elements = explode('|', $cookie);
     if (count($cookie_elements) !== 4) {
-        error_log("MnmlLogin: Invalid cookie format for session extension");
+        debug("MnmlLogin: Invalid cookie format for session extension");
         return;
     }
     list($username, $expiration, $token, $hmac) = $cookie_elements;
@@ -999,7 +1041,7 @@ function extend_session_page_load() {
     $cookie_hash = wp_hash($cookie);
     $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
     if (!isset($sessions[$cookie_hash]) || $ip !== $sessions[$cookie_hash]['ip']) {
-        error_log("MnmlLogin: Invalid session or IP mismatch for session extension: user=$user_id, IP=$ip");
+        debug("MnmlLogin: Invalid session or IP mismatch for session extension: user=$user_id, IP=$ip");
         return;
     }
 
@@ -1008,7 +1050,7 @@ function extend_session_page_load() {
     $sessions[$cookie_hash]['expiration'] = time() + $timeout;
     update_user_meta($user_id, 'session_tokens', $sessions);
     wp_set_auth_cookie($user_id, !empty($sessions[$cookie_hash]['remember']));
-    error_log("MnmlLogin: Session extended on page load for user ID: $user_id");
+    debug("MnmlLogin: Session extended on page load for user ID: $user_id");
 }
 // add_action('admin_init', __NAMESPACE__ . '\extend_session_page_load');
 
@@ -1027,11 +1069,11 @@ function block_wp_login() {
         $ua                  = $_SERVER['HTTP_USER_AGENT'] ?? 'none';
         $allow_empty_referer = preg_match('/Firefox|TorBrowser|Mobile.*Safari/i', $ua);
         if ((empty($referer) || $referer === 'none' || strpos(parse_url($referer, PHP_URL_HOST), $expected_referer) === false) && ! $allow_empty_referer) {
-            error_log("MnmlLogin: Spam login attempt to {$_SERVER['REQUEST_URI']} from $ip with UA $ua and referer $referer");
+            debug("MnmlLogin: Spam login attempt to {$_SERVER['REQUEST_URI']} from $ip with UA $ua and referer $referer");
             status_header(403);
             die();
         } else {
-            error_log("MnmlLogin: Login attempt to {$_SERVER['REQUEST_URI']} from $ip with UA $ua and referer $referer");
+            debug("MnmlLogin: Login attempt to {$_SERVER['REQUEST_URI']} from $ip with UA $ua and referer $referer");
         }
     }
 }
@@ -1200,4 +1242,20 @@ function random($len = 16, $prefix = '') {
     $chars = array_merge(range('0', '9'), range('A', 'Z'), range('a', 'z'));
     for ($i = 0; $i < $len; $i++) $prefix .= $chars[mt_rand(0, count($chars) - 1)];
     return $prefix . bin2hex(random_bytes($len / 2));
+}
+
+
+function debug( $var, $note = '', $force = false ) {
+
+    if ( ( ! defined('WP_DEBUG') || ! WP_DEBUG ) && ! $force ) {
+        return;
+    }
+    $log_file = __DIR__ . "/mnml-login.log";
+    $timestamp = date('Y-m-d H:i:s T');
+    $note_part = $note ? "***{$note}*** " : '';
+    $value = is_string($var) ? $var : var_export($var, true);
+
+    $message = "[{$timestamp}] {$note_part}{$value}" . PHP_EOL;
+
+    error_log( $message, 3, $log_file );
 }
