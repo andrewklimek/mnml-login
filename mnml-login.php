@@ -151,7 +151,7 @@ function login_shortcode( $atts ) {
         echo "#mnml-login{max-width:400px;margin:50px auto;padding:20px}";
         echo ".mnml-input{width:100%;padding:8px;margin:5px 0}";
     }
-    echo "#mnml-2fa-section,.mnml-link-sent #mnml-login-section,#simple-login-form{display:none}";
+    echo "#mnml-2fa-section,.mnml-link-sent #mnml-login-section,#simple-login-form,.mnml-no-2facode{display:none}";
     echo ".mnml-link-sent #mnml-2fa-section{display:block}";
     ?>
     #mnml2fac {
@@ -403,11 +403,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     // window.parent.postMessage('mnml_interim_login_success', '*');// trying to trigger a load for this to hide asap but it doesnt work: https://github.com/WordPress/WordPress/blob/0514ff27d05f58ef674594e4e9ef662a66b5fd0a/wp-includes/js/wp-auth-check.js#L50
                 <?php if ( strpos($settings->two_factor_auth, 'link') !== false ) : ?>
                 } else if (data.message) {
-                    form.classList.add('mnml-link-sent');
+                    form.classList.add('mnml-link-sent','mnml-no-2facode');
                     msgEl.textContent = data.message;
-                    document.getElementById('mnml2fac')?.focus();
-                    submitButton.disabled = false;
-                    submitButton.value = 'Submit Code';
                 <?php endif; ?>
                 } else {
                     msgEl.textContent = 'Unexpected response. Please try again.';
@@ -819,7 +816,7 @@ function auth_handler($request) {
 
         return rest_ensure_response([
             'success' => true,
-            'twofa' => $code,
+            'twofa' => $code ? true : false,
             'token' => $transient_token,
             'message' => "Check your $return for the " . (strpos($settings->two_factor_auth, 'link') !== false ? 'sign-in link' : 'security code'),
         ]);
