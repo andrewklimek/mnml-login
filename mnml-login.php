@@ -153,6 +153,17 @@ function login_shortcode( $atts ) {
     }
     echo "#mnml-2fa-section,.mnml-link-sent #mnml-login-section,#simple-login-form{display:none}";
     echo ".mnml-link-sent #mnml-2fa-section{display:block}";
+    ?>
+    #mnml2fac {
+        border: none;
+        outline: none;
+        font-size: 2em;
+        letter-spacing: 1ch;
+        width: 12ch;
+        margin: auto;
+        display: block;
+    }
+    <?php
     echo "</style>";
     ?>
 <form id=simple-login-form method=post action="<?php echo rest_url('mnml_login/v1/simple_login'); ?>">
@@ -199,7 +210,7 @@ function login_shortcode( $atts ) {
                 <?php if ( strpos($settings->two_factor_auth, 'code') !== false ): ?>
                 <div id=mnml-2fa-section>
                     <p><label for=mnml2fac>Security Code<br>
-                        <input type=number name=mnml2fac id=mnml2fac class=mnml-input size=20 autocomplete=one-time-code>
+                        <input inputmode=numeric maxlength=6 name=mnml2fac id=mnml2fac class=mnml-input autocomplete=one-time-code placeholder="------">
                     </label></p>
                 </div>
                 <?php endif; ?>
@@ -222,8 +233,9 @@ function login_shortcode( $atts ) {
             <?php if ( strpos($settings->two_factor_auth, 'code') !== false ): ?>
             <div id=mnml-2fa-section>
                 <p><label for=mnml2fac>security code:<br>
-                    <input type=number name=mnml2fac id=mnml2fac class=mnml-input size=20 autocomplete=one-time-code>
+                    <input inputmode=numeric maxlength=6 name=mnml2fac id=mnml2fac class=mnml-input autocomplete=one-time-code placeholder="------">
                 </label></p>
+                <p id=mnml-countdown></p>
             </div>
             <?php endif; ?>
             <p><label><input name=rememberme type=checkbox id=mnml-rememberme value=forever> Remember Me</label></p>
@@ -290,6 +302,39 @@ document.addEventListener('DOMContentLoaded', () => {
     form.querySelectorAll('#mnml-submit').forEach(el => el.removeAttribute('disabled'));
     <?php endif; // enable_bot_protection ?>
 
+    // auto submit after 6 characters
+    const codeInput = document.getElementById('mnml2fac');
+    if (codeInput) {
+        codeInput.addEventListener('input', () => {
+            if (codeInput.value.length >= 6) {
+                form.requestSubmit();
+            }
+        });
+    }
+
+    // startCountdown
+    // const resendLink = document.getElementById('mnml-resend-code');
+    const countdownEl = document.getElementById('mnml-countdown');
+    let timer;
+    const startCountdown = () => {
+        let sec = 300;
+        // resendLink.style.display = 'none';
+        // countdownEl.style.display = 'inline';
+        countdownEl.textContent = 'Code expires in 5:00';
+        clearInterval(timer);
+        timer = setInterval(() => {
+            sec--;
+            const m = Math.floor(sec/60), s = sec%60;
+            countdownEl.textContent = `Code expires in ${m}:${s.toString().padStart(2,'0')}`;
+            if (sec <= 0) {
+                clearInterval(timer);
+                // countdownEl.style.display = 'none';
+                // resendLink.style.display = 'inline';
+            }
+        }, 1000);
+    };
+
+
     // Unified form submission
     form.addEventListener('submit', e => {
         e.preventDefault();
@@ -335,6 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (data.twofa) {
                     form.classList.add('mnml-link-sent');
                     msgEl.textContent = data.message;
+                    startCountdown();
                     if (data.token) {
                         form.querySelectorAll('#mnml2fak').forEach(el => el.value = data.token);
                     }
@@ -518,7 +564,7 @@ function auth_handler($request) {
    // Authenticate 2FA code
     if (! empty($request->get_param('mnml2fac')) && ! empty($request->get_param('mnml2fak'))) {
         $code_key     = $request->get_param('mnml2fak');
-        $posted_code  = $request->get_param('mnml2fac');
+        $posted_code  = trim( $request->get_param('mnml2fac') );
         $transient_key = "mnml_login_{$code_key}";
 
         if (! empty($settings->enable_bot_protection)) {
