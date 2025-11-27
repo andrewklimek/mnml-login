@@ -622,9 +622,11 @@ function auth_handler($request) {
             $response['interim'] = true;
             $response['message'] = 'Login successful.';
         } else {
-            $response['redirect'] = ! empty($login_data->redirect)
-                ? wp_validate_redirect($login_data->redirect)
-                : admin_url();
+            $admin_url = admin_url();
+            $redirect = $login_data->redirect ?? $admin_url;
+            $redirect = apply_filters('login_redirect', $redirect, $login_data->redirect, $user);
+            if ( $redirect !== $admin_url ) $redirect = wp_validate_redirect( $redirect );
+            $response['redirect'] = $redirect;
         }
 
         debug("MnmlLogin: 2FA login successful for user: {$user->user_login}");
@@ -831,7 +833,11 @@ function auth_handler($request) {
         $response['interim'] = true;
         $response['message'] = 'Login successful.';
     } else {
-        $response['redirect'] = ! empty($request->get_param('redirect_to')) ? wp_validate_redirect( $request->get_param('redirect_to') ) : admin_url();
+        $admin_url = admin_url();
+        $redirect = $request->get_param('redirect_to') ?? $admin_url;
+        $redirect = apply_filters('login_redirect', $redirect, $request->get_param('redirect_to'), $user);
+        if ( $redirect !== $admin_url ) $redirect = wp_validate_redirect( $redirect );
+        $response['redirect'] = $redirect;
     }
     debug("MnmlLogin: Login successful for user: {$user->user_login}");
     return rest_ensure_response($response);
@@ -865,10 +871,13 @@ function magic_link_handler($wp) {
         }
         wp_set_auth_cookie($user->ID, ! empty($login_data->rm));
         do_action( 'wp_login', $user->user_login, $user );
-        $redirect = ! empty($login_data->redirect) ? $login_data->redirect : admin_url();
         debug("MnmlLogin: Magic link login successful for user: {$user->user_login}");
-        status_header(302);
-        wp_safe_redirect($redirect);
+
+        $admin_url = admin_url();
+        $redirect = $login_data->redirect ?? $admin_url;
+        $redirect = apply_filters('login_redirect', $redirect, $login_data->redirect, $user);
+        if ( $redirect !== $admin_url ) $redirect = wp_validate_redirect( $redirect );
+        wp_redirect($redirect);// above code (used in 2 other places) is same as doing wp_safe_redirect, but without the forcing of admin_url as fallback.
         exit;
     }
 }
