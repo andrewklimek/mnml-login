@@ -534,9 +534,8 @@ function auth_handler($request) {
         $user_data = retrieve_password($request->get_param('user_login'));
         if (is_wp_error($user_data)) {
             debug("MnmlLogin: Lost password error for " . $request->get_param('user_login') . ": " . $user_data->get_error_message());
-            return new \WP_Error('bad_request', $user_data->get_error_message(), ['status' => 400]);
         }
-        return rest_ensure_response(['success' => true, 'message' => 'Password reset email sent.']);
+        return rest_ensure_response(['success' => true, 'message' => 'If that account exists, an email was sent with a reset link.']);
     }
 
     // Handle password reset
@@ -633,6 +632,18 @@ function auth_handler($request) {
         return rest_ensure_response($response);
     }
 
+    // Generate a default error response so people can't probe for usernames/emails
+    if ( $settings->two_factor_auth === 'none' ) {
+        $generic_response = "Please try again.";
+    } else {
+        $sent_via = 'email';
+        if (function_exists(__NAMESPACE__ . '\send_via_twilio')) {
+            // just pick 'email' or 'sms' at random so there is no pattern to what is a generic error
+            $sent_via = (rand(0,1) === 0) ? 'email' : 'phone';
+        }
+        $generic_response = "Check your $sent_via for the " . (strpos($settings->two_factor_auth, 'link') !== false ? 'sign-in link' : 'security code');
+    }
+
     // Handle User / Pass
     $creds = [
         'user_login'    => sanitize_user($request->get_param('mnml2falog') ?? ''),
@@ -670,7 +681,8 @@ function auth_handler($request) {
     }
     if (! $user) {
         debug("MnmlLogin: No user found for login: {$creds['user_login']}");
-        return new \WP_Error('bad_request', 'Invalid Username or Email.', ['status' => 400]);
+        // Avoid revealing whether the username/email exists. Respond with a generic message.
+        return rest_ensure_response(['success' => true, 'message' => $generic_response]);
     }
 
     // Authenticate for code, disabled 2FA, or interim login with grace period
@@ -680,8 +692,28 @@ function auth_handler($request) {
             debug("MnmlLogin: Authentication failed: " . $user_auth->get_error_message());
             return new \WP_Error('unauthorized', 'Invalid credentials.', ['status' => 401]);
         }
-        debug( 'interim-login: ' . $request->get_param('interim-login') );
-        if ($request->get_param('interim-login') === '1' && $settings->two_factor_auth === 'code') {
+
+        // Non-2FA login
+        if ($settings->two_factor_auth === 'none') {
+            wp_set_auth_cookie($user->ID, $creds['remember']);
+            do_action( 'wp_login', $user->user_login, $user );
+            $response = ['success' => true];
+            if ($request->get_param('interim-login') === '1') {
+                $response['interim'] = true;
+                $response['message'] = 'Login successful.';
+            } else {
+                $admin_url = admin_url();
+                $redirect = $request->get_param('redirect_to') ?? $admin_url;
+                $redirect = apply_filters('login_redirect', $redirect, $request->get_param('redirect_to'), $user);
+                if ( $redirect !== $admin_url ) $redirect = wp_validate_redirect( $redirect );
+                $response['redirect'] = $redirect;
+            }
+            debug("MnmlLogin: Login successful for user: {$user->user_login}");
+            return rest_ensure_response($response);
+        }
+
+        // Interim with code, check for valid session cookie to skip 2FA
+        if ($request->get_param('interim-login') === '1') {
             debug('running interim');
             if (!empty($_COOKIE[ LOGGED_IN_COOKIE ])) {
                 $cookie_elements = explode('|', $_COOKIE[ LOGGED_IN_COOKIE ]);
@@ -705,142 +737,127 @@ function auth_handler($request) {
     }
 
     // Send 2FA
-    if ($settings->two_factor_auth !== 'none') {
-        $login_data = (object) [
-            'id' => $user->ID,
-            'rm' => $creds['remember'],
-            'ip' => $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '',
-        ];
+    $login_data = (object) [
+        'id' => $user->ID,
+        'rm' => $creds['remember'],
+        'ip' => $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '',
+    ];
 
-        if (! empty($request->get_param('redirect_to'))) {
-            $login_data->redirect = $request->get_param('redirect_to');
+    if (! empty($request->get_param('redirect_to'))) {
+        // Validate redirect and only store a safe redirect URL.
+        $validated = wp_validate_redirect($request->get_param('redirect_to'), '');
+        if ($validated) {
+            $login_data->redirect = $validated;
         }
-        $code = false;
-        $transient_token = false;
-        if (strpos($settings->two_factor_auth, 'code') !== false) {
-            $code = sprintf("%06s", random_int(0, 999999));
-            $transient_token = ! empty($settings->enable_bot_protection) ? ($session_token ?? random()) : random();
-        }
+    }
+    $code = false;
+    $transient_token = false;
+    if (strpos($settings->two_factor_auth, 'code') !== false) {
+        $code = sprintf("%06s", random_int(0, 999999));
+        $transient_token = ! empty($settings->enable_bot_protection) ? ($session_token ?? random()) : random();
+    }
 
-        if ($settings->two_factor_auth === 'code') {
-            $sent = false;
-            $return = 'email';
-            if (function_exists(__NAMESPACE__ . '\send_via_twilio')) {
-                $phone = apply_filters('mnml_login_get_tele_by_user', null, $user);
-                if ($phone === null) {
-                    $meta_key = $settings->telephone_user_meta ?? 'mnml2fano';
-                    $phone = get_user_meta($user->ID, $meta_key, true);
-                }
-                if ($phone) {
-                    $sent = send_via_twilio($phone, $code);
-                    if ($sent) {
-                        $sent = 'phone';
-                        $return = 'phone';
-                    } else {
-                        if ( !empty( $settings->dont_fallback_to_email ) ) $dont_email = true;
-                    }
-                }
+    if ($settings->two_factor_auth === 'code') {
+        $sent = false;
+        $sent_via = 'email';
+        if (function_exists(__NAMESPACE__ . '\send_via_twilio')) {
+            $phone = apply_filters('mnml_login_get_tele_by_user', null, $user);
+            if ($phone === null) {
+                $meta_key = $settings->telephone_user_meta ?? 'mnml2fano';
+                $phone = get_user_meta($user->ID, $meta_key, true);
             }
-            if (! $sent && empty( $dont_email ) ) {
-                $email = $user->user_email;
-                if (! $email) {
-                    debug("MnmlLogin: No email for user: {$user->user_login}");
-                    return new \WP_Error('bad_request', 'No email configured.', ['status' => 400]);
-                }
-                $subject = $settings->code_email_subject ?? 'Your security code is %code%';
-                $subject = str_ireplace('%code%', $code, $subject);
-                $body = $settings->code_email_body ?? 'Hello %name%, here is the security code you requested';
-                $name = $user->first_name ?? $user->display_name ?? '';
-                $body = str_ireplace([' %name%', '%name%'], ($name ? ' ' . $name : ''), $body);
-                $body = add_markup_to_emails($body, $code);
-                $sent = wp_mail($email, $subject, $body, 'Content-Type: text/html;');
+            if ($phone) {
+                $sent = send_via_twilio($phone, $code);
                 if ($sent) {
-                    $sent = 'email';
+                    $sent = 'phone';
+                    $sent_via = 'phone';
+                } else {
+                    if ( !empty( $settings->dont_fallback_to_email ) ) $dont_email = true;
                 }
             }
+        }
+        if (! $sent && empty( $dont_email ) ) {
+            $email = $user->user_email;
+            if (! $email) {
+                debug("MnmlLogin: No email for user: {$user->user_login}");
+                return rest_ensure_response(['success' => true, 'message' => $generic_response]);
+            }
+            $subject = $settings->code_email_subject ?? 'Your security code is %code%';
+            $subject = str_ireplace('%code%', $code, $subject);
+            $body = $settings->code_email_body ?? 'Hello %name%, here is the security code you requested';
+            $name = $user->first_name ?? $user->display_name ?? '';
+            $body = str_ireplace([' %name%', '%name%'], ($name ? ' ' . $name : ''), $body);
+            $body = add_markup_to_emails($body, $code);
+            $sent = wp_mail($email, $subject, $body, 'Content-Type: text/html;');
             if ($sent) {
+                $sent = 'email';
+            }
+        }
+        if ($sent) {
+            $login_data->code = $code;
+            $login_data->attempts = 1;
+            set_transient("mnml_login_{$transient_token}", $login_data, 300);
+            debug("MnmlLogin: 2FA code sent via $sent for user: {$user->user_login}");
+        } else {
+            debug("MnmlLogin: Failed to send 2FA code for user: {$user->user_login}");
+            return rest_ensure_response(['success' => true, 'message' => $generic_response]);
+        }
+    }
+
+    // Magic link (or both)
+    if (strpos($settings->two_factor_auth, 'link') !== false) {
+        do { $key = random(); } while (get_transient("mnml_login_{$key}"));// is it even worth checking for a duplicate?
+        $link = get_home_url() . "?tfal={$key}";
+        $sent = false;
+        $sent_via = 'email';
+        if (function_exists(__NAMESPACE__ . '\send_via_twilio')) {
+            $phone = apply_filters('mnml_login_get_tele_by_user', null, $user);
+            if ($phone === null) {
+                $meta_key = $settings->telephone_user_meta ?? 'mnml2fano';
+                $phone = get_user_meta($user->ID, $meta_key, true);
+            }
+            if ($phone) {
+                $sent = send_via_twilio($phone, $code, $link);
+                if ($sent) {
+                    $sent = 'phone';
+                    $sent_via = 'phone';
+                } else {
+                    if ( !empty( $settings->dont_fallback_to_email ) ) $dont_email = true;
+                }
+            }
+        }
+        if (! $sent && empty( $dont_email ) ) {
+            $email = $user->user_email;
+            $subject = $settings->link_email_subject ?? 'Your sign-in link';
+            $body = $settings->link_email_body ?? 'Hello %name%, here is the sign-in link you requested';
+            $name = $user->first_name ?? $user->display_name ?? '';
+            $body = str_ireplace([' %name%', '%name%'], ($name ? ' ' . $name : ''), $body);
+            $body = add_markup_to_emails($body, $code, $link);
+            $sent = wp_mail($email, $subject, $body, 'Content-Type: text/html;');
+            if ($sent) {
+                $sent = 'email';
+            }
+        }
+        if ($sent) {
+            set_transient("mnml_login_{$key}", $login_data, 300);
+            debug("MnmlLogin: Magic link sent via $sent for user: {$user->user_email}");
+            if (strpos($settings->two_factor_auth, 'code') !== false) {
                 $login_data->code = $code;
                 $login_data->attempts = 1;
                 set_transient("mnml_login_{$transient_token}", $login_data, 300);
-                debug("MnmlLogin: 2FA code sent via $sent for user: {$user->user_login}");
-            } else {
-                debug("MnmlLogin: Failed to send 2FA code for user: {$user->user_login}");
-                return new \WP_Error('server_error', 'Failed to send code.', ['status' => 500]);
             }
+        } else {
+            debug("MnmlLogin: Failed to send magic link for user: {$user->user_email}");
+            return rest_ensure_response(['success' => true, 'message' => $generic_response]);
         }
-
-        // Magic link (or both)
-        if (strpos($settings->two_factor_auth, 'link') !== false) {
-            do { $key = random(); } while (get_transient("mnml_login_{$key}"));// is it even worth checking for a duplicate?
-            $link = get_home_url() . "?tfal={$key}";
-            $sent = false;
-            $return = 'email';
-            if (function_exists(__NAMESPACE__ . '\send_via_twilio')) {
-                $phone = apply_filters('mnml_login_get_tele_by_user', null, $user);
-                if ($phone === null) {
-                    $meta_key = $settings->telephone_user_meta ?? 'mnml2fano';
-                    $phone = get_user_meta($user->ID, $meta_key, true);
-                }
-                if ($phone) {
-                    $sent = send_via_twilio($phone, $code, $link);
-                    if ($sent) {
-                        $sent = 'phone';
-                        $return = 'phone';
-                    } else {
-                        if ( !empty( $settings->dont_fallback_to_email ) ) $dont_email = true;
-                    }
-                }
-            }
-            if (! $sent && empty( $dont_email ) ) {
-                $email = $user->user_email;
-                $subject = $settings->link_email_subject ?? 'Your sign-in link';
-                $body = $settings->link_email_body ?? 'Hello %name%, here is the sign-in link you requested';
-                $name = $user->first_name ?? $user->display_name ?? '';
-                $body = str_ireplace([' %name%', '%name%'], ($name ? ' ' . $name : ''), $body);
-                $body = add_markup_to_emails($body, $code, $link);
-                $sent = wp_mail($email, $subject, $body, 'Content-Type: text/html;');
-                if ($sent) {
-                    $sent = 'email';
-                }
-            }
-            if ($sent) {
-                set_transient("mnml_login_{$key}", $login_data, 300);
-                debug("MnmlLogin: Magic link sent via $sent for user: {$user->user_email}");
-                if (strpos($settings->two_factor_auth, 'code') !== false) {
-                    $login_data->code = $code;
-                    $login_data->attempts = 1;
-                    set_transient("mnml_login_{$transient_token}", $login_data, 300);
-                }
-            } else {
-                debug("MnmlLogin: Failed to send magic link for user: {$user->user_email}");
-                return new \WP_Error('server_error', 'Failed to send link.', ['status' => 500]);
-            }
-        }
-
-        return rest_ensure_response([
-            'success' => true,
-            'twofa' => $code ? true : false,
-            'token' => $transient_token,
-            'message' => "Check your $return for the " . (strpos($settings->two_factor_auth, 'link') !== false ? 'sign-in link' : 'security code'),
-        ]);
     }
 
-    // Non-2FA login
-    wp_set_auth_cookie($user->ID, $creds['remember']);
-    do_action( 'wp_login', $user->user_login, $user );
-    $response = ['success' => true];
-    if ($request->get_param('interim-login') === '1') {
-        $response['interim'] = true;
-        $response['message'] = 'Login successful.';
-    } else {
-        $admin_url = admin_url();
-        $redirect = $request->get_param('redirect_to') ?? $admin_url;
-        $redirect = apply_filters('login_redirect', $redirect, $request->get_param('redirect_to'), $user);
-        if ( $redirect !== $admin_url ) $redirect = wp_validate_redirect( $redirect );
-        $response['redirect'] = $redirect;
-    }
-    debug("MnmlLogin: Login successful for user: {$user->user_login}");
-    return rest_ensure_response($response);
+    return rest_ensure_response([
+        'success' => true,
+        'twofa' => $code ? true : false,
+        'token' => $transient_token,
+        'message' => "Check your $sent_via for the " . (strpos($settings->two_factor_auth, 'link') !== false ? 'sign-in link' : 'security code'),
+    ]);
 }
 
 // Magic link handler
