@@ -615,6 +615,7 @@ function auth_handler($request) {
         }
 
         wp_set_auth_cookie($user->ID, ! empty($request->get_param('rememberme')));
+        do_action( 'wp_login', $user->user_login, $user );
 
         $response = ['success' => true];
         if ($request->get_param('interim-login') === '1') {
@@ -824,6 +825,7 @@ function auth_handler($request) {
 
     // Non-2FA login
     wp_set_auth_cookie($user->ID, $creds['remember']);
+    do_action( 'wp_login', $user->user_login, $user );
     $response = ['success' => true];
     if ($request->get_param('interim-login') === '1') {
         $response['interim'] = true;
@@ -862,6 +864,7 @@ function magic_link_handler($wp) {
             wp_mail($user->user_email, $message, $message . "\n\nuser agent: {$_SERVER['HTTP_USER_AGENT']}");
         }
         wp_set_auth_cookie($user->ID, ! empty($login_data->rm));
+        do_action( 'wp_login', $user->user_login, $user );
         $redirect = ! empty($login_data->redirect) ? $login_data->redirect : admin_url();
         debug("MnmlLogin: Magic link login successful for user: {$user->user_login}");
         status_header(302);
