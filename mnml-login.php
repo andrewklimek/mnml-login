@@ -153,17 +153,8 @@ function login_shortcode( $atts ) {
     }
     echo "#mnml-2fa-section,.mnml-link-sent #mnml-login-section,#simple-login-form,.mnml-no-2facode{display:none}";
     echo ".mnml-link-sent #mnml-2fa-section{display:block}";
-    ?>
-    #mnml2fac {
-        border: none;
-        outline: none;
-        font-size: 2em;
-        letter-spacing: 1ch;
-        width: 12ch;
-        margin: auto;
-        display: block;
-    }
-    <?php
+    echo "#mnml-2fa-code-inputs{display:flex;gap:8px;}";
+    echo "#mnml-2fa-code-inputs input{width:40px;text-align:center;font-size:20px;}";
     echo "</style>";
     ?>
 <form id=simple-login-form method=post action="<?php echo rest_url('mnml_login/v1/simple_login'); ?>">
@@ -209,9 +200,16 @@ function login_shortcode( $atts ) {
                 <?php endif; ?>
                 <?php if ( strpos($settings->two_factor_auth, 'code') !== false ): ?>
                 <div id=mnml-2fa-section>
-                    <p><label for=mnml2fac>Security Code<br>
-                        <input inputmode=numeric maxlength=6 name=mnml2fac id=mnml2fac class=mnml-input autocomplete=one-time-code placeholder="------">
-                    </label></p>
+                    <p>security code<br>
+                        <span id=mnml-2fa-code-inputs>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac1 id=mnml2fac1 class=mnml-input>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac2 id=mnml2fac2 class=mnml-input>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac3 id=mnml2fac3 class=mnml-input>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac4 id=mnml2fac4 class=mnml-input>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac5 id=mnml2fac5 class=mnml-input>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac6 id=mnml2fac6 class=mnml-input>
+                        </span>
+                    </p>
                 </div>
                 <?php endif; ?>
                 <p><input type=submit id=mnml-submit class=mnml-button value="Log In" disabled>
@@ -232,9 +230,16 @@ function login_shortcode( $atts ) {
             </div>
             <?php if ( strpos($settings->two_factor_auth, 'code') !== false ): ?>
             <div id=mnml-2fa-section>
-                <p><label for=mnml2fac>security code:<br>
-                    <input inputmode=numeric maxlength=6 name=mnml2fac id=mnml2fac class=mnml-input autocomplete=one-time-code placeholder="------">
-                </label></p>
+                <p>security code:<br>
+                    <span id=mnml-2fa-code-inputs>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac1 id=mnml2fac1 class=mnml-input>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac2 id=mnml2fac2 class=mnml-input>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac3 id=mnml2fac3 class=mnml-input>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac4 id=mnml2fac4 class=mnml-input>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac5 id=mnml2fac5 class=mnml-input>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac6 id=mnml2fac6 class=mnml-input>
+                    </span>
+                </p>
                 <p id=mnml-countdown></p>
             </div>
             <?php endif; ?>
@@ -259,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let hasInteracted = false, tokenFetched = true;
 
     // Interaction pre-check
-    form.querySelectorAll('#mnml2falog, #mnml2fac, #mnml-user-login').forEach(input => {
+    form.querySelectorAll('#mnml2falog, #mnml2fac4, #mnml-user-login').forEach(input => {
         input.addEventListener('keydown', () => {
             hasInteracted = true;
             form.querySelectorAll('#mnml-submit').forEach(el => el.removeAttribute('disabled'));
@@ -302,15 +307,54 @@ document.addEventListener('DOMContentLoaded', () => {
     form.querySelectorAll('#mnml-submit').forEach(el => el.removeAttribute('disabled'));
     <?php endif; // enable_bot_protection ?>
 
-    // auto submit after 6 characters
-    const codeInput = document.getElementById('mnml2fac');
-    if (codeInput) {
-        codeInput.addEventListener('input', () => {
-            if (codeInput.value.length >= 6) {
+    // auto submit after 6 digits in separate fields
+    const codeInputs = [1, 2, 3, 4, 5, 6].map(i => document.getElementById(`mnml2fac${i}`));
+    // Only listen for paste on first field
+    codeInputs[0]?.addEventListener('paste', (e) => {
+        e.preventDefault(); // stop normal paste
+        const pasted = (e.clipboardData || window.clipboardData)
+            .getData('text')
+            .replace(/\D/g, '')
+            .slice(0, 6);
+
+        for (let i = 0; i < 6; i++) {
+            codeInputs[i].value = pasted[i] || '';
+        }
+
+        // Focus last filled field
+        const focusIndex = pasted.length > 0 ? Math.min(pasted.length - 1, 5) : 0;
+        codeInputs[focusIndex].focus();
+
+        if (pasted.length === 6) {
+            form.requestSubmit();
+        }
+    });
+
+    // Then your normal input & backspace handlers as before (without paste logic)
+    codeInputs.forEach((input, index) => {
+        if (!input) return;
+
+        input.addEventListener('input', (e) => {
+            const val = e.target.value.replace(/\D/g, '').slice(-1);
+            e.target.value = val;
+
+            if (val && index < 5) {
+                codeInputs[index + 1].focus();
+            }
+
+            if (codeInputs.every(f => f.value.length === 1)) {
                 form.requestSubmit();
             }
         });
-    }
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && !input.value && index > 0) {
+                e.preventDefault();
+                codeInputs[index - 1].focus();
+                codeInputs[index - 1].value = '';
+            }
+        });
+    });
 
     // startCountdown
     // const resendLink = document.getElementById('mnml-resend-code');
@@ -368,6 +412,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Combine 6 digit fields into single code for submission
+        const codeDigits = [1, 2, 3, 4, 5, 6].map(i => {
+            const field = document.getElementById(`mnml2fac${i}`);
+            return field ? field.value : '';
+        }).join('');
+        if (codeDigits.length === 6) {
+            formData.set('mnml2fac', codeDigits);
+        }
+
+
         fetch(endpoint, {
             method: 'POST',
             body: formData
@@ -384,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (data.token) {
                         form.querySelectorAll('#mnml2fak').forEach(el => el.value = data.token);
                     }
-                    document.getElementById('mnml2fac')?.focus();
+                    document.getElementById('mnml2fac1')?.focus();
                     submitButton.disabled = false;
                     submitButton.value = 'Submit Code';
                 } else if (isLostPassword) {
