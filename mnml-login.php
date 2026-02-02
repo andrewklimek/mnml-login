@@ -677,7 +677,7 @@ function auth_handler($request) {
         } else {
             $admin_url = admin_url();
             $redirect = $login_data->redirect ?? $admin_url;
-            $redirect = apply_filters('login_redirect', $redirect, $login_data->redirect, $user);
+            $redirect = apply_filters('login_redirect', $redirect, $login_data->redirect ?? null, $user);
             if ( $redirect !== $admin_url ) $redirect = wp_validate_redirect( $redirect );
             $response['redirect'] = $redirect;
         }
@@ -946,7 +946,7 @@ function magic_link_handler($wp) {
 
         $admin_url = admin_url();
         $redirect = $login_data->redirect ?? $admin_url;
-        $redirect = apply_filters('login_redirect', $redirect, $login_data->redirect, $user);
+        $redirect = apply_filters('login_redirect', $redirect, $login_data->redirect ?? null, $user);
         if ( $redirect !== $admin_url ) $redirect = wp_validate_redirect( $redirect );
         wp_redirect($redirect);// above code (used in 2 other places) is same as doing wp_safe_redirect, but without the forcing of admin_url as fallback.
         exit;
