@@ -148,13 +148,13 @@ function login_shortcode( $atts ) {
 
     echo "<style>";
     if ( empty( $atts['no_styling'] ) ) {
-        echo "#mnml-login{max-width:400px;margin:50px auto;padding:20px}";
+        echo "#mnml-login{max-width:360px;margin:3rem auto;padding:1.5rem}";
         echo ".mnml-input{width:100%;padding:8px;margin:5px 0}";
     }
     echo "#mnml-2fa-section,.mnml-link-sent #mnml-login-section,#simple-login-form,.mnml-no-2facode{display:none}";
     echo ".mnml-link-sent #mnml-2fa-section{display:block}";
-    echo "#mnml-2fa-code-inputs{display:flex;gap:8px;}";
-    echo "#mnml-2fa-code-inputs input{width:40px;text-align:center;font-size:20px;}";
+    echo "#mnml-2fa-code-inputs{display:flex;width:100%;justify-content:space-between}";
+    echo "#mnml-2fa-code-inputs input{width:40px;text-align:center;font-size:20px;border-radius:8px;border:1px solid #aaa}";
     echo "</style>";
     ?>
 <form id=simple-login-form method=post action="<?php echo rest_url('mnml_login/v1/simple_login'); ?>">
@@ -202,12 +202,12 @@ function login_shortcode( $atts ) {
                 <div id=mnml-2fa-section>
                     <p>security code<br>
                         <span id=mnml-2fa-code-inputs>
-                            <input inputmode=numeric maxlength=1 name=mnml2fac1 id=mnml2fac1 class=mnml-input>
-                            <input inputmode=numeric maxlength=1 name=mnml2fac2 id=mnml2fac2 class=mnml-input>
-                            <input inputmode=numeric maxlength=1 name=mnml2fac3 id=mnml2fac3 class=mnml-input>
-                            <input inputmode=numeric maxlength=1 name=mnml2fac4 id=mnml2fac4 class=mnml-input>
-                            <input inputmode=numeric maxlength=1 name=mnml2fac5 id=mnml2fac5 class=mnml-input>
-                            <input inputmode=numeric maxlength=1 name=mnml2fac6 id=mnml2fac6 class=mnml-input>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac1 id=mnml2fac1 class=mnml-input autocomplete="one-time-code">
+                            <input inputmode=numeric maxlength=1 name=mnml2fac2 id=mnml2fac2 class=mnml-input autocomplete=off>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac3 id=mnml2fac3 class=mnml-input autocomplete=off>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac4 id=mnml2fac4 class=mnml-input autocomplete=off>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac5 id=mnml2fac5 class=mnml-input autocomplete=off>
+                            <input inputmode=numeric maxlength=1 name=mnml2fac6 id=mnml2fac6 class=mnml-input autocomplete=off>
                         </span>
                     </p>
                 </div>
@@ -232,12 +232,12 @@ function login_shortcode( $atts ) {
             <div id=mnml-2fa-section>
                 <p>security code:<br>
                     <span id=mnml-2fa-code-inputs>
-                        <input inputmode=numeric maxlength=1 name=mnml2fac1 id=mnml2fac1 class=mnml-input>
-                        <input inputmode=numeric maxlength=1 name=mnml2fac2 id=mnml2fac2 class=mnml-input>
-                        <input inputmode=numeric maxlength=1 name=mnml2fac3 id=mnml2fac3 class=mnml-input>
-                        <input inputmode=numeric maxlength=1 name=mnml2fac4 id=mnml2fac4 class=mnml-input>
-                        <input inputmode=numeric maxlength=1 name=mnml2fac5 id=mnml2fac5 class=mnml-input>
-                        <input inputmode=numeric maxlength=1 name=mnml2fac6 id=mnml2fac6 class=mnml-input>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac1 id=mnml2fac1 class=mnml-input autocomplete="one-time-code">
+                        <input inputmode=numeric maxlength=1 name=mnml2fac2 id=mnml2fac2 class=mnml-input autocomplete=off>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac3 id=mnml2fac3 class=mnml-input autocomplete=off>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac4 id=mnml2fac4 class=mnml-input autocomplete=off>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac5 id=mnml2fac5 class=mnml-input autocomplete=off>
+                        <input inputmode=numeric maxlength=1 name=mnml2fac6 id=mnml2fac6 class=mnml-input autocomplete=off>
                     </span>
                 </p>
                 <p id=mnml-countdown></p>
