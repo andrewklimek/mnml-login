@@ -149,7 +149,7 @@ function login_shortcode( $atts ) {
 
     echo "<style>";
     if ( empty( $atts['no_styling'] ) ) {
-        echo "#mnml-login{max-width:360px;margin:3rem auto;padding:1.5rem}";
+        echo "#mnml-login{width:360px;max-width:100%;margin:3rem auto;padding:1.5rem}";
         echo ".mnml-input{width:100%;padding:8px;margin:5px 0}";
     }
     echo "#mnml-2fa-section,.mnml-link-sent #mnml-login-section,#simple-login-form,.mnml-no-2facode{display:none}";
