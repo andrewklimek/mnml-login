@@ -88,6 +88,7 @@ function redirect_to_homepage_login() {
             header('Cache-Control: no-store');
         } else {
             header('Cache-Control: public, max-age=3600');
+            header('Vary: Cookie');
         }
 
         status_header(200);
